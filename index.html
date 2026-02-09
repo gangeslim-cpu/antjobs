@@ -56,6 +56,19 @@
             box-shadow: 0 0 15px #fbbf24;
         }
 
+        .role-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #5d4037;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            border: 2px solid white;
+        }
+
         .floating-text {
             position: absolute;
             pointer-events: none;
@@ -114,6 +127,20 @@
             transition: transform 0.1s;
         }
         .zoom-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #3e2723; }
+
+        .audio-toggle {
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: white;
+            border: 2px solid #5d4037;
+            font-weight: bold;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen">
@@ -147,6 +174,9 @@
                 </div>
             </div>
             <div id="colony-size" class="text-[9px] sm:text-xs font-bold text-brown-600">CAPACITY: 10/15</div>
+            <button id="audio-btn" class="audio-toggle" onclick="toggleAudio()">
+                <span>🎵</span> Music: OFF
+            </button>
         </div>
     </div>
 
@@ -179,18 +209,22 @@
                     <div id="btn-forager" onclick="selectTool('forager')" class="job-btn active w-12 h-12 sm:w-16 sm:h-16 bg-green-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-green-500">
                         <span class="text-xl sm:text-2xl">👟</span>
                         <span class="text-[8px] sm:text-[10px] font-bold">FORAGER</span>
+                        <div id="count-forager" class="role-badge">0</div>
                     </div>
                     <div id="btn-nurse" onclick="selectTool('nurse')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-blue-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-blue-400">
                         <span class="text-xl sm:text-2xl">🍼</span>
                         <span class="text-[8px] sm:text-[10px] font-bold">NURSE</span>
+                        <div id="count-nurse" class="role-badge">0</div>
                     </div>
                     <div id="btn-builder" onclick="selectTool('builder')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-yellow-500">
                         <span class="text-xl sm:text-2xl">🧱</span>
                         <span class="text-[8px] sm:text-[10px] font-bold">BUILDER</span>
+                        <div id="count-builder" class="role-badge">0</div>
                     </div>
                     <div id="btn-guard" onclick="selectTool('guard')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-red-500">
                         <span class="text-xl sm:text-2xl">🛡️</span>
                         <span class="text-[8px] sm:text-[10px] font-bold">GUARD</span>
+                        <div id="count-guard" class="role-badge">0</div>
                     </div>
                 </div>
             </div>
@@ -234,7 +268,8 @@
             queenPos: { x: 0, y: 0 },
             isExhausted: false,
             tickCounter: 0,
-            zoom: 1.0
+            zoom: 1.0,
+            audioEnabled: false
         };
 
         const ROLES = {
@@ -244,6 +279,71 @@
             guard: { icon: '🛡️', color: '#ef4444' },
             idle: { icon: '', color: '#5d4037' }
         };
+
+        // --- Procedural Audio System ---
+        let audioCtx = null;
+        let masterGain = null;
+        const notesAmbient = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // C Major Pentatonic
+        const notesDanger = [98.00, 110.00, 123.47, 130.81, 146.83]; // Low G Minor/Dissonant
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            // Increased global base volume to 0.5 as requested
+            masterGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            masterGain.connect(audioCtx.destination);
+        }
+
+        function playSoftNote(freq, time, duration, type = 'sine', volume = 0.05) {
+            if (!state.audioEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, time);
+            g.gain.setValueAtTime(0, time);
+            g.gain.linearRampToValueAtTime(volume, time + 0.1);
+            g.gain.exponentialRampToValueAtTime(0.001, time + duration);
+            osc.connect(g);
+            g.connect(masterGain);
+            osc.start(time);
+            osc.stop(time + duration);
+        }
+
+        function toggleAudio() {
+            initAudio();
+            state.audioEnabled = !state.audioEnabled;
+            const btn = document.getElementById('audio-btn');
+            btn.innerHTML = state.audioEnabled ? '<span>🎵</span> Music: ON' : '<span>🎵</span> Music: OFF';
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function updateMusic() {
+            if (!state.audioEnabled || !audioCtx) return;
+
+            const activeThreats = state.spiders.some(s => !s.isChasedAway) || state.rivals.some(r => !r.isChasedAway);
+
+            if (activeThreats) {
+                // Danger Music (Faster Pulse: every 15 ticks)
+                if (state.tickCounter % 15 === 0) {
+                    playSoftNote(notesDanger[0], audioCtx.currentTime, 0.3, 'triangle', 0.1);
+                    if (Math.random() > 0.4) {
+                        const threatNote = notesDanger[Math.floor(Math.random() * notesDanger.length)] * 2;
+                        playSoftNote(threatNote, audioCtx.currentTime, 0.15, 'sawtooth', 0.04);
+                    }
+                }
+            } else {
+                // Ambient Music
+                if (state.tickCounter % 120 === 0) {
+                    const note = notesAmbient[Math.floor(Math.random() * notesAmbient.length)];
+                    playSoftNote(note, audioCtx.currentTime, 4, 'sine', 0.05);
+                    if (Math.random() > 0.5) {
+                        const secondNote = notesAmbient[Math.floor(Math.random() * notesAmbient.length)] * 0.5;
+                        playSoftNote(secondNote, audioCtx.currentTime + 0.5, 6, 'sine', 0.04);
+                    }
+                }
+            }
+        }
 
         function adjustZoom(amount) {
             state.zoom = Math.max(0.5, Math.min(2.0, state.zoom + amount));
@@ -512,7 +612,7 @@
         }
 
         function drawQueen() {
-            const hasThreats = (state.spiders.length + state.rivals.length) > 0;
+            const hasThreats = (state.spiders.filter(s=>!s.isChasedAway).length + state.rivals.filter(r=>!r.isChasedAway).length) > 0;
             const currentCap = Math.floor(state.capacity);
             const totalPipeline = state.ants.length + state.larvae + state.eggs;
             
@@ -541,6 +641,7 @@
             if (state.isVictory) return;
             state.tickCounter++;
             updateQueen();
+            updateMusic();
             
             const consumption = ((state.ants.length * 0.015) + (state.larvae * 0.01)) * 0.5;
             state.food -= consumption;
@@ -571,11 +672,9 @@
             
             if (state.activeEvent) processEvent();
             
-            // Refined Capacity Damage: Only if spiders are actually in the nest area
             const activeThreatsInNest = state.spiders.filter(s => {
                 if (s.isChasedAway) return false;
                 const distToNest = Math.sqrt((s.x - state.queenPos.x)**2 + (s.y - state.queenPos.y)**2);
-                // The nest radius is 80 + capacity * 2
                 return distToNest < (80 + state.capacity * 2);
             }).length;
 
@@ -599,6 +698,7 @@
             state.spiders = state.spiders.filter(s => s.update());
             state.rivals = state.rivals.filter(r => r.update());
             
+            // UI Updates
             document.getElementById('food-count').innerText = Math.floor(state.food);
             document.getElementById('egg-count').innerText = state.eggs;
             document.getElementById('larva-count').innerText = state.larvae;
@@ -611,6 +711,13 @@
             document.getElementById('colony-size').innerText = `CAPACITY: ${state.ants.length}/${currentCap}`;
             if (state.ants.length > currentCap) document.getElementById('colony-size').classList.add('text-red-600');
             else document.getElementById('colony-size').classList.remove('text-red-600');
+
+            const counts = { forager: 0, nurse: 0, builder: 0, guard: 0 };
+            state.ants.forEach(a => { if(counts[a.role] !== undefined) counts[a.role]++; });
+            document.getElementById('count-forager').innerText = counts.forager;
+            document.getElementById('count-nurse').innerText = counts.nurse;
+            document.getElementById('count-builder').innerText = counts.builder;
+            document.getElementById('count-guard').innerText = counts.guard;
         }
 
         function triggerEvent() {
