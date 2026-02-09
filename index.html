@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ant Jobs! - Eternal Colony</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Quicksand:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background-color: #2d1b0d;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        h1, .font-title {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        #game-canvas {
+            background: radial-gradient(circle, #8b5a2b 0%, #4a2c10 100%);
+            display: block;
+        }
+
+        .ui-panel {
+            background: rgba(255, 255, 255, 0.9);
+            border: 4px solid #5d4037;
+            border-radius: 1.5rem;
+            box-shadow: 0 8px 0 #3e2723;
+        }
+
+        .stat-card {
+            background: #fff;
+            border: 2px solid #d7ccc8;
+            border-radius: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .job-btn {
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .job-btn:active { transform: scale(0.9); }
+        .job-btn.active {
+            transform: scale(1.1);
+            border-color: #fbbf24;
+            box-shadow: 0 0 15px #fbbf24;
+        }
+
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            animation: floatUp 1.5s ease-out forwards;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            z-index: 100;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-50px); opacity: 0; }
+        }
+
+        .event-banner {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 50;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: translate(-50%, -50%) scale(0); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+
+        #stasis-overlay {
+            pointer-events: none;
+            transition: opacity 2s ease;
+        }
+
+        .zoom-controls {
+            position: fixed;
+            right: 20px;
+            bottom: 120px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 40;
+        }
+
+        .zoom-btn {
+            width: 50px;
+            height: 50px;
+            background: white;
+            border: 3px solid #5d4037;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 4px 0 #3e2723;
+            transition: transform 0.1s;
+        }
+        .zoom-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #3e2723; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+    <!-- Header Stats -->
+    <div class="fixed top-4 left-0 right-0 px-4 flex justify-between items-start z-10 pointer-events-none">
+        <div class="ui-panel p-2 flex gap-1 sm:gap-2 pointer-events-auto">
+            <div class="stat-card">
+                <span class="text-xl sm:text-2xl" title="Food">🍎</span>
+                <span id="food-count" class="font-bold text-lg sm:text-xl text-green-700">50</span>
+            </div>
+            <div class="stat-card">
+                <span class="text-xl sm:text-2xl" title="Eggs">🥚</span>
+                <span id="egg-count" class="font-bold text-lg sm:text-xl text-blue-700">5</span>
+            </div>
+            <div class="stat-card">
+                <span class="text-xl sm:text-2xl" title="Larvae">🐛</span>
+                <span id="larva-count" class="font-bold text-lg sm:text-xl text-purple-700">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="text-xl sm:text-2xl" title="Total Ants">🐜</span>
+                <span id="ant-count" class="font-bold text-lg sm:text-xl text-orange-700">10</span>
+            </div>
+        </div>
+
+        <div class="ui-panel p-2 flex flex-col items-end pointer-events-auto">
+            <div class="flex items-center gap-2 mb-1">
+                <span id="health-label" class="font-bold text-brown-800 text-[10px] sm:text-sm">COLONY VITALITY</span>
+                <div class="w-20 sm:w-32 h-3 sm:h-4 bg-gray-300 rounded-full overflow-hidden border-2 border-brown-900">
+                    <div id="health-bar" class="h-full bg-green-500 transition-all duration-500" style="width: 100%"></div>
+                </div>
+            </div>
+            <div id="colony-size" class="text-[9px] sm:text-xs font-bold text-brown-600">CAPACITY: 10/15</div>
+        </div>
+    </div>
+
+    <!-- Main Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Visual filter for exhaustion -->
+    <div id="stasis-overlay" class="fixed inset-0 bg-blue-900/10 opacity-0 pointer-events-none z-0"></div>
+
+    <!-- Event Banner -->
+    <div id="event-container" class="hidden event-banner">
+        <div class="bg-yellow-100 border-4 border-yellow-600 p-6 rounded-3xl shadow-2xl text-center">
+            <h2 id="event-title" class="text-3xl font-title text-yellow-800 mb-2">SPIDER ATTACK!</h2>
+            <p id="event-desc" class="text-lg text-yellow-700">Guards are fighting back!</p>
+        </div>
+    </div>
+
+    <!-- Zoom Controls -->
+    <div class="zoom-controls">
+        <button class="zoom-btn" onclick="adjustZoom(0.1)" title="Zoom In">🔍<span class="text-xs">+</span></button>
+        <button class="zoom-btn" onclick="adjustZoom(-0.1)" title="Zoom Out">🔍<span class="text-xs">-</span></button>
+    </div>
+
+    <!-- Footer Controls -->
+    <div class="fixed bottom-6 left-0 right-0 px-4 flex justify-center z-10">
+        <div class="ui-panel p-3 sm:p-4 flex gap-2 sm:gap-4 items-center">
+            <div class="flex flex-col items-center">
+                <p class="text-[10px] font-bold mb-1 uppercase text-gray-500">Assign Job:</p>
+                <div class="flex gap-2 sm:gap-3">
+                    <div id="btn-forager" onclick="selectTool('forager')" class="job-btn active w-12 h-12 sm:w-16 sm:h-16 bg-green-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-green-500">
+                        <span class="text-xl sm:text-2xl">👟</span>
+                        <span class="text-[8px] sm:text-[10px] font-bold">FORAGER</span>
+                    </div>
+                    <div id="btn-nurse" onclick="selectTool('nurse')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-blue-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-blue-400">
+                        <span class="text-xl sm:text-2xl">🍼</span>
+                        <span class="text-[8px] sm:text-[10px] font-bold">NURSE</span>
+                    </div>
+                    <div id="btn-builder" onclick="selectTool('builder')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-yellow-500">
+                        <span class="text-xl sm:text-2xl">🧱</span>
+                        <span class="text-[8px] sm:text-[10px] font-bold">BUILDER</span>
+                    </div>
+                    <div id="btn-guard" onclick="selectTool('guard')" class="job-btn w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-xl sm:rounded-2xl flex flex-col items-center justify-center border-4 border-red-500">
+                        <span class="text-xl sm:text-2xl">🛡️</span>
+                        <span class="text-[8px] sm:text-[10px] font-bold">GUARD</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-l-2 border-gray-300 h-10 sm:h-12 mx-1 sm:mx-2"></div>
+            
+            <div class="text-center min-w-[80px] sm:min-w-[100px]">
+                <p class="text-[10px] font-bold text-gray-500 mb-1">COLONY LOG</p>
+                <p id="game-hint" class="text-[10px] sm:text-sm font-bold text-brown-800 leading-tight">Click an ant to give<br>them a job!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="victory-screen" class="hidden fixed inset-0 z-50 bg-yellow-500/90 flex flex-col items-center justify-center p-6 text-center">
+        <h1 class="text-6xl font-title text-white mb-4 drop-shadow-lg">EMPIRE COMPLETE!</h1>
+        <p class="text-2xl text-white mb-8 font-bold">You have built a massive nest of 200 capacity!</p>
+        <button onclick="location.reload()" class="px-8 py-4 bg-brown-800 text-white rounded-2xl font-bold text-xl hover:bg-brown-900 transition-colors">START A NEW EMPIRE</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game State
+        const state = {
+            food: 50,
+            eggs: 5,
+            larvae: 0,
+            ants: [],
+            spiders: [],
+            rivals: [],
+            health: 100,
+            capacity: 15,
+            selectedTool: 'forager',
+            isGameOver: false, 
+            isVictory: false,
+            eventTimer: 600,
+            activeEvent: null,
+            queenProgress: 0,
+            queenPos: { x: 0, y: 0 },
+            isExhausted: false,
+            tickCounter: 0,
+            zoom: 1.0
+        };
+
+        const ROLES = {
+            forager: { icon: '👟', color: '#22c55e' },
+            nurse: { icon: '🍼', color: '#60a5fa' },
+            builder: { icon: '🧱', color: '#eab308' },
+            guard: { icon: '🛡️', color: '#ef4444' },
+            idle: { icon: '', color: '#5d4037' }
+        };
+
+        function adjustZoom(amount) {
+            state.zoom = Math.max(0.5, Math.min(2.0, state.zoom + amount));
+        }
+
+        class Enemy {
+            constructor(isRival = false) {
+                const side = Math.floor(Math.random() * 4);
+                if (side === 0) { this.x = Math.random() * canvas.width; this.y = -50; }
+                else if (side === 1) { this.x = canvas.width + 50; this.y = Math.random() * canvas.height; }
+                else if (side === 2) { this.x = Math.random() * canvas.width; this.y = canvas.height + 50; }
+                else { this.x = -50; this.y = Math.random() * canvas.height; }
+
+                this.targetX = state.queenPos.x;
+                this.targetY = state.queenPos.y;
+                this.speed = 0.8 + Math.random() * 0.4;
+                this.angle = 0;
+                this.isChasedAway = false;
+                this.legCycle = 0;
+                this.guardsNearby = 0;
+                this.isRival = isRival;
+                this.raidTimer = 0;
+            }
+
+            update() {
+                const guardRequirement = this.isRival ? 2 : 5;
+                const guardRange = this.isRival ? 45 : 65;
+
+                this.guardsNearby = state.ants.filter(a => {
+                    if (a.role !== 'guard') return false;
+                    const dx = a.x - this.x;
+                    const dy = a.y - this.y;
+                    return Math.sqrt(dx*dx + dy*dy) < guardRange;
+                }).length;
+
+                if (this.guardsNearby >= guardRequirement && !this.isChasedAway) {
+                    this.isChasedAway = true;
+                    const angle = Math.random() * Math.PI * 2;
+                    this.targetX = this.x + Math.cos(angle) * 1000;
+                    this.targetY = this.y + Math.sin(angle) * 1000;
+                    this.speed *= 2.5; 
+                }
+
+                if (this.isRival && !this.isChasedAway) {
+                    const distToCenter = Math.sqrt((this.x - state.queenPos.x)**2 + (this.y - state.queenPos.y)**2);
+                    if (distToCenter < 100) {
+                        this.raidTimer++;
+                        if (this.raidTimer % 120 === 0 && state.food > 0) {
+                            state.food = Math.max(0, state.food - 10);
+                            showFloatingText("-10 🍎", this.x, this.y, "text-red-500 font-black");
+                        }
+                    }
+                }
+
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist > 5) {
+                    this.angle = Math.atan2(dy, dx);
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+                } else if (this.isChasedAway) {
+                    return false;
+                } else {
+                    this.targetX = state.queenPos.x + (Math.random() - 0.5) * 150;
+                    this.targetY = state.queenPos.y + (Math.random() - 0.5) * 150;
+                }
+                
+                this.legCycle += 0.15;
+                return true;
+            }
+
+            draw() {
+                if (this.isRival) {
+                    drawAntSprite(ctx, this.x, this.y, this.angle, 1.2, 'idle', true);
+                } else {
+                    this.drawSpider();
+                }
+
+                if (this.guardsNearby > 0 && !this.isChasedAway) {
+                    const req = this.isRival ? 2 : 5;
+                    ctx.font = 'bold 12px Quicksand';
+                    ctx.fillStyle = '#ef4444';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`Guards: ${this.guardsNearby}/${req}`, this.x, this.y - 30);
+                }
+            }
+
+            drawSpider() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(10, 0, 6, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath(); ctx.arc(12, -2, 1.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(12, 2, 1.5, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 8; i++) {
+                    const legAngle = (i / 7) * Math.PI - Math.PI/2;
+                    const offset = Math.sin(this.legCycle + i) * 5;
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(legAngle) * 20, Math.sin(legAngle) * 20 + offset); ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
+        class Ant {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.role = 'idle';
+                this.targetX = x; this.targetY = y;
+                this.baseSpeed = (1.2 + Math.random()) * 0.8; 
+                this.angle = Math.random() * Math.PI * 2;
+                this.activityTimer = 0;
+                this.hatchStep = 0;
+            }
+
+            get currentSpeed() {
+                if (state.isExhausted) return this.baseSpeed * 0.25;
+                if (state.health < 20) return this.baseSpeed * 0.5;
+                return this.baseSpeed;
+            }
+
+            update() {
+                const enemies = [...state.spiders, ...state.rivals];
+                if (this.role === 'guard' && enemies.length > 0) {
+                    let nearest = null;
+                    let minDist = Infinity;
+                    enemies.forEach(e => {
+                        if (e.isChasedAway) return;
+                        const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                        if (dist < minDist) { minDist = dist; nearest = e; }
+                    });
+                    if (nearest) { this.targetX = nearest.x; this.targetY = nearest.y; }
+                }
+
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist > 5) {
+                    this.angle = Math.atan2(dy, dx);
+                    this.x += Math.cos(this.angle) * this.currentSpeed;
+                    this.y += Math.sin(this.angle) * this.currentSpeed;
+                } else {
+                    this.setNewTarget();
+                }
+
+                this.activityTimer++;
+                const actionThreshold = state.isExhausted ? 133 : 33;
+                if (this.activityTimer >= actionThreshold) {
+                    this.performRoleAction();
+                    this.activityTimer = 0;
+                }
+            }
+
+            setNewTarget() {
+                const margin = 50;
+                if (this.role === 'forager') {
+                    this.targetX = Math.random() * canvas.width;
+                    this.targetY = Math.random() * (canvas.height * 0.3);
+                } else if (this.role === 'nurse') {
+                    this.targetX = state.queenPos.x + (Math.random() - 0.5) * 200;
+                    this.targetY = state.queenPos.y + (Math.random() - 0.5) * 200;
+                } else if (this.role === 'guard') {
+                    if (state.spiders.length === 0 && state.rivals.length === 0) {
+                        this.targetX = Math.random() > 0.5 ? margin : canvas.width - margin;
+                        this.targetY = Math.random() * canvas.height;
+                    }
+                } else {
+                    this.targetX = margin + Math.random() * (canvas.width - margin*2);
+                    this.targetY = margin + Math.random() * (canvas.height - margin*2);
+                }
+            }
+
+            performRoleAction() {
+                switch(this.role) {
+                    case 'forager':
+                        state.food += 3;
+                        showFloatingText("+3 🍎", this.x, this.y, "text-green-500 font-bold");
+                        break;
+                    case 'nurse':
+                        if (this.hatchStep === 0 && state.eggs > 0) {
+                            state.eggs--; state.larvae++;
+                            showFloatingText("Larva! 🐛", this.x, this.y, "text-blue-400");
+                            this.hatchStep = 1;
+                        } else if (state.larvae > 0) {
+                            if (state.ants.length < Math.floor(state.capacity)) {
+                                state.larvae--;
+                                spawnAnt(this.x, this.y);
+                                showFloatingText("New Ant! 🐜", this.x, this.y, "text-orange-500");
+                            } else {
+                                showFloatingText("Need Room! 🏠", this.x, this.y, "text-red-500 text-[10px]");
+                            }
+                            this.hatchStep = 0;
+                        }
+                        break;
+                    case 'builder':
+                        state.capacity += 0.1;
+                        showFloatingText("+Nest 🏗️", this.x, this.y, "text-yellow-600");
+                        break;
+                }
+            }
+
+            draw() {
+                drawAntSprite(ctx, this.x, this.y, this.angle, 1, this.role);
+            }
+        }
+
+        function drawAntSprite(ctx, x, y, angle, scale, role = 'idle', isRival = false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+            
+            if (isRival) {
+                ctx.fillStyle = '#ef4444'; 
+            } else {
+                ctx.fillStyle = state.isExhausted ? '#78716c' : (scale > 1.5 ? '#2d1b0d' : '#1a0f00');
+            }
+            
+            ctx.beginPath(); ctx.ellipse(8, 0, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(0, 0, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(-8, 0, 7, 5, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = ctx.fillStyle;
+            ctx.lineWidth = 1;
+            for(let i=-1; i<=1; i++) {
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(i*4, 8); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(i*4, -8); ctx.stroke();
+            }
+            ctx.restore();
+            if (role !== 'idle') {
+                ctx.font = `${14 * scale}px serif`;
+                ctx.globalAlpha = state.isExhausted ? 0.4 : 1.0;
+                ctx.fillText(ROLES[role].icon, x - (8*scale), y - (14*scale));
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function spawnAnt(x, y) {
+            if (state.ants.length >= Math.floor(state.capacity)) return;
+            state.ants.push(new Ant(x, y));
+        }
+
+        function updateQueen() {
+            const activeSpiders = state.spiders.filter(s => !s.isChasedAway).length > 0;
+            const activeRivals = state.rivals.filter(r => !r.isChasedAway).length > 0;
+            const currentCap = Math.floor(state.capacity);
+            const totalPipeline = state.ants.length + state.larvae + state.eggs;
+            const hasRoom = totalPipeline < currentCap;
+            const hasFood = state.food >= 5;
+
+            if (hasFood && hasRoom && !state.isExhausted && !activeSpiders && !activeRivals) {
+                state.queenProgress += 0.45;
+                if (state.queenProgress >= 100) {
+                    state.eggs++; state.food -= 2; state.queenProgress = 0;
+                    showFloatingText("New Egg! 🥚", state.queenPos.x, state.queenPos.y - 40, "text-blue-500 font-bold");
+                }
+            } else {
+                state.queenProgress = Math.max(0, state.queenProgress - 0.05);
+            }
+        }
+
+        function drawQueen() {
+            const hasThreats = (state.spiders.length + state.rivals.length) > 0;
+            const currentCap = Math.floor(state.capacity);
+            const totalPipeline = state.ants.length + state.larvae + state.eggs;
+            
+            drawAntSprite(ctx, state.queenPos.x, state.queenPos.y, -Math.PI/2, 2.5, 'idle');
+            ctx.font = 'bold 12px Quicksand';
+            ctx.textAlign = 'center';
+
+            let status = "QUEEN"; let color = "white";
+            if (hasThreats) { status = "DEFEND!"; color = "#ef4444"; }
+            else if (state.food < 5) { status = "HUNGRY"; color = "#fb923c"; }
+            else if (totalPipeline >= currentCap) { status = "NEST FULL"; color = "#60a5fa"; }
+
+            ctx.fillStyle = color;
+            ctx.fillText(status, state.queenPos.x, state.queenPos.y + 40);
+
+            if (!hasThreats && state.food >= 5 && totalPipeline < currentCap) {
+                const barWidth = 60;
+                ctx.fillStyle = '#444';
+                ctx.fillRect(state.queenPos.x - barWidth/2, state.queenPos.y + 45, barWidth, 6);
+                ctx.fillStyle = '#60a5fa';
+                ctx.fillRect(state.queenPos.x - barWidth/2, state.queenPos.y + 45, (state.queenProgress / 100) * barWidth, 6);
+            }
+        }
+
+        function updateSimulation() {
+            if (state.isVictory) return;
+            state.tickCounter++;
+            updateQueen();
+            
+            const consumption = ((state.ants.length * 0.015) + (state.larvae * 0.01)) * 0.5;
+            state.food -= consumption;
+
+            if (state.food <= 0) {
+                state.food = 0; state.isExhausted = true;
+                state.health = Math.max(5, state.health - 0.05);
+                document.getElementById('game-hint').innerText = "💤 STASIS: Need food to move!";
+                document.getElementById('stasis-overlay').style.opacity = "0.6";
+            } else {
+                state.isExhausted = false;
+                document.getElementById('stasis-overlay').style.opacity = "0";
+            }
+            
+            if (state.capacity >= 200) {
+                state.isVictory = true;
+                document.getElementById('victory-screen').classList.remove('hidden');
+                return;
+            }
+
+            if (state.food > 30 && state.health < 100) state.health += 0.03;
+            
+            state.eventTimer--;
+            if (state.eventTimer <= 0) {
+                triggerEvent();
+                state.eventTimer = 800 + Math.random() * 800; 
+            }
+            
+            if (state.activeEvent) processEvent();
+            
+            // Refined Capacity Damage: Only if spiders are actually in the nest area
+            const activeThreatsInNest = state.spiders.filter(s => {
+                if (s.isChasedAway) return false;
+                const distToNest = Math.sqrt((s.x - state.queenPos.x)**2 + (s.y - state.queenPos.y)**2);
+                // The nest radius is 80 + capacity * 2
+                return distToNest < (80 + state.capacity * 2);
+            }).length;
+
+            if (activeThreatsInNest > 0) {
+                state.capacity = Math.max(5, state.capacity - (5 / 60) * activeThreatsInNest);
+                state.health = Math.max(5, state.health - 0.05 * activeThreatsInNest);
+            }
+
+            if (state.ants.length > Math.floor(state.capacity)) {
+                if (state.tickCounter % 60 === 0) {
+                    const randomIndex = Math.floor(Math.random() * state.ants.length);
+                    state.ants.splice(randomIndex, 1);
+                    showFloatingText("Overcrowded! 💀", state.queenPos.x, state.queenPos.y, "text-red-600 font-bold");
+                }
+                document.getElementById('game-hint').innerText = "💀 OVERCROWDED: Ants are perishing!";
+                document.getElementById('game-hint').className = "text-[10px] sm:text-sm font-bold text-red-600 leading-tight";
+            } else if (!state.isExhausted) {
+                document.getElementById('game-hint').className = "text-[10px] sm:text-sm font-bold text-brown-800 leading-tight";
+            }
+
+            state.spiders = state.spiders.filter(s => s.update());
+            state.rivals = state.rivals.filter(r => r.update());
+            
+            document.getElementById('food-count').innerText = Math.floor(state.food);
+            document.getElementById('egg-count').innerText = state.eggs;
+            document.getElementById('larva-count').innerText = state.larvae;
+            document.getElementById('ant-count').innerText = state.ants.length;
+            const hb = document.getElementById('health-bar');
+            hb.style.width = state.health + '%';
+            hb.style.backgroundColor = state.isExhausted ? '#64748b' : (state.health < 30 ? '#fbbf24' : '#22c55e');
+            
+            const currentCap = Math.floor(state.capacity);
+            document.getElementById('colony-size').innerText = `CAPACITY: ${state.ants.length}/${currentCap}`;
+            if (state.ants.length > currentCap) document.getElementById('colony-size').classList.add('text-red-600');
+            else document.getElementById('colony-size').classList.remove('text-red-600');
+        }
+
+        function triggerEvent() {
+            const events = [
+                { id: 'raid', title: 'SPIDER ATTACK! 🕷️', desc: 'Defend the capacity!' },
+                { id: 'rival', title: 'RIVAL RAIDER! 🐜', desc: 'Red ants are stealing food!' },
+                { id: 'rival', title: 'RIVAL RAIDER! 🐜', desc: 'Defend the storehouse!' },
+                { id: 'heat', title: 'DRY SEASON! ☀️', desc: 'Resources are drying up.' },
+                { id: 'sugar', title: 'SUGAR SPILL! 🍬', desc: 'Energy gift!' }
+            ];
+            state.activeEvent = events[Math.floor(Math.random() * events.length)];
+            const banner = document.getElementById('event-container');
+            document.getElementById('event-title').innerText = state.activeEvent.title;
+            document.getElementById('event-desc').innerText = state.activeEvent.desc;
+            banner.classList.remove('hidden');
+
+            const cap = Math.floor(state.capacity);
+
+            if (state.activeEvent.id === 'sugar') {
+                state.food += 40;
+            } else if (state.activeEvent.id === 'raid') {
+                let spiderCount = 1;
+                if (cap > 100) spiderCount = 20;
+                else if (cap > 80) spiderCount = 15;
+                else if (cap > 50) spiderCount = 10;
+                else if (cap > 30) spiderCount = 3;
+                else if (cap > 10) spiderCount = 2;
+                for(let i=0; i<spiderCount; i++) state.spiders.push(new Enemy(false));
+            } else if (state.activeEvent.id === 'rival') {
+                let rivalCount = cap > 50 ? 20 : 10;
+                for(let i=0; i<rivalCount; i++) state.rivals.push(new Enemy(true));
+            }
+
+            setTimeout(() => banner.classList.add('hidden'), 4000);
+            setTimeout(() => state.activeEvent = null, 8000);
+        }
+
+        function processEvent() {
+            if (!state.activeEvent) return;
+            if (state.activeEvent.id === 'heat') state.food -= 0.05;
+        }
+
+        function selectTool(tool) {
+            state.selectedTool = tool;
+            document.querySelectorAll('.job-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${tool}`).classList.add('active');
+            const hints = {
+                forager: "Foragers gather food to keep the colony alive.",
+                nurse: "Nurses turn Eggs into Larvae and then into Ants.",
+                builder: "Builders expand the nest. Reach 200 to Win!",
+                guard: "Guards chase threats (5/Spider, 2/Rival)."
+            };
+            document.getElementById('game-hint').innerText = hints[tool];
+        }
+
+        function showFloatingText(text, x, y, color) {
+            const el = document.createElement('div');
+            el.className = `floating-text ${color} text-sm`;
+            el.innerText = text;
+            el.style.left = (x * state.zoom) + 'px';
+            el.style.top = (y * state.zoom) + 'px';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1500);
+        }
+
+        function handleInput(e) {
+            const rect = canvas.getBoundingClientRect();
+            const rawX = (e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0)) - rect.left;
+            const rawY = (e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0)) - rect.top;
+            
+            const x = (rawX - canvas.width/2) / state.zoom + canvas.width/2;
+            const y = (rawY - canvas.height/2) / state.zoom + canvas.height/2;
+
+            for (let ant of state.ants) {
+                const dist = Math.sqrt((ant.x - x)**2 + (ant.y - y)**2);
+                if (dist < 40 / state.zoom) {
+                    ant.role = state.selectedTool;
+                    showFloatingText("Ready!", ant.x, ant.y, "text-white");
+                    break;
+                }
+            }
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            state.queenPos = { x: canvas.width/2, y: canvas.height/2 + 50 };
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0,0, canvas.width, canvas.height);
+            ctx.fillStyle = '#8b5a2b';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            ctx.translate(canvas.width/2, canvas.height/2);
+            ctx.scale(state.zoom, state.zoom);
+            ctx.translate(-canvas.width/2, -canvas.height/2);
+
+            ctx.fillStyle = '#4a2c10';
+            ctx.beginPath();
+            ctx.arc(state.queenPos.x, state.queenPos.y, 80 + state.capacity * 2, 0, Math.PI*2);
+            ctx.fill();
+            
+            drawQueen();
+            state.spiders.forEach(s => s.draw());
+            state.rivals.forEach(r => r.draw());
+            state.ants.forEach(ant => { ant.update(); ant.draw(); });
+            
+            ctx.restore();
+
+            updateSimulation();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('resize', resize);
+        canvas.addEventListener('mousedown', handleInput);
+        canvas.addEventListener('touchstart', (e) => { handleInput(e); e.preventDefault(); }, {passive: false});
+        
+        resize();
+        for(let i=0; i<10; i++) spawnAnt(state.queenPos.x + (Math.random()-0.5)*100, state.queenPos.y + (Math.random()-0.5)*100);
+        gameLoop();
+    </script>
+</body>
+</html>
