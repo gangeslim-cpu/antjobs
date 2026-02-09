@@ -145,6 +145,28 @@
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen">
 
+    <!-- Opening Page / Start Screen -->
+    <div id="start-screen" class="fixed inset-0 z-[100] bg-brown-900 flex items-center justify-center p-4" style="background-color: #2d1b0d;">
+        <div class="ui-panel max-w-lg w-full p-8 text-center space-y-6">
+            <h1 class="text-4xl font-title text-brown-800">Ant Jobs!</h1>
+            <div class="space-y-4">
+                <p class="text-lg font-bold text-brown-600">Before I play the game, I promise that I will:</p>
+                <ul class="text-left space-y-3 text-brown-700 font-semibold list-none">
+                    <li>😊 Play quietly and not disturb others.</li>
+                    <li>👂 Listen carefully to my teacher’s instructions.</li>
+                    <li>🤝 Use the device responsibly and take good care of it.</li>
+                    <li>⏰ Stop playing when the time is up.</li>
+                    <li>🔌 Return the device properly when asked.</li>
+                    <li>⭐ Play fairly and kindly with my classmates.</li>
+                </ul>
+                <p class="text-sm italic text-red-600 font-bold border-t border-brown-200 pt-4">
+                    I understand that if I do not keep my promise, I may not be allowed to play the game next time.
+                </p>
+            </div>
+            <button onclick="startGame()" class="w-full py-4 bg-green-500 hover:bg-green-600 text-white rounded-2xl font-bold text-xl shadow-lg transition-transform active:scale-95">Yes, I agree!</button>
+        </div>
+    </div>
+
     <!-- Header Stats -->
     <div class="fixed top-4 left-0 right-0 px-4 flex justify-between items-start z-10 pointer-events-none">
         <div class="ui-panel p-2 flex gap-1 sm:gap-2 pointer-events-auto">
@@ -269,7 +291,8 @@
             isExhausted: false,
             tickCounter: 0,
             zoom: 1.0,
-            audioEnabled: false
+            audioEnabled: false,
+            gameStarted: false
         };
 
         const ROLES = {
@@ -290,7 +313,7 @@
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             masterGain = audioCtx.createGain();
-            // Increased global base volume to 0.5 as requested
+            // Global base volume 0.5
             masterGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
             masterGain.connect(audioCtx.destination);
         }
@@ -324,7 +347,6 @@
             const activeThreats = state.spiders.some(s => !s.isChasedAway) || state.rivals.some(r => !r.isChasedAway);
 
             if (activeThreats) {
-                // Danger Music (Faster Pulse: every 15 ticks)
                 if (state.tickCounter % 15 === 0) {
                     playSoftNote(notesDanger[0], audioCtx.currentTime, 0.3, 'triangle', 0.1);
                     if (Math.random() > 0.4) {
@@ -333,7 +355,6 @@
                     }
                 }
             } else {
-                // Ambient Music
                 if (state.tickCounter % 120 === 0) {
                     const note = notesAmbient[Math.floor(Math.random() * notesAmbient.length)];
                     playSoftNote(note, audioCtx.currentTime, 4, 'sine', 0.05);
@@ -347,6 +368,12 @@
 
         function adjustZoom(amount) {
             state.zoom = Math.max(0.5, Math.min(2.0, state.zoom + amount));
+        }
+
+        function startGame() {
+            initAudio();
+            state.gameStarted = true;
+            document.getElementById('start-screen').classList.add('hidden');
         }
 
         class Enemy {
@@ -638,7 +665,7 @@
         }
 
         function updateSimulation() {
-            if (state.isVictory) return;
+            if (!state.gameStarted || state.isVictory) return;
             state.tickCounter++;
             updateQueen();
             updateMusic();
@@ -784,6 +811,7 @@
         }
 
         function handleInput(e) {
+            if (!state.gameStarted) return;
             const rect = canvas.getBoundingClientRect();
             const rawX = (e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0)) - rect.left;
             const rawY = (e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0)) - rect.top;
